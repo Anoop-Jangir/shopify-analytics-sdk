@@ -1,13 +1,36 @@
 {
     "name": "shopify-analytics-sdk",
     "version": "1.0.0",
+    "description": "Shopify Analytics SDK - Multi-provider support for mParticle, GA4, Meta Pixel, and Segment",
     "private": true,
     "type": "module",
+    "main": "./dist/shopify-analytics-sdk.js",
+    "module": "./dist/shopify-analytics-sdk.js",
+    "types": "./dist/types.d.ts",
+    "files": [
+      "dist",
+      "README.md"
+    ],
     "scripts": {
       "dev": "vite",
-      "build": "vite build",
-      "clean": "rimraf dist"
+      "build": "npm run clean && vite build && npm run build:minified",
+      "build:minified": "vite build --config vite.config.minified.ts",
+      "build:types": "tsc --declaration --emitDeclarationOnly",
+      "preview": "vite preview",
+      "clean": "rimraf dist",
+      "analyze": "vite build --analyze"
     },
+    "keywords": [
+      "shopify",
+      "analytics",
+      "mparticle",
+      "ga4",
+      "meta-pixel",
+      "segment",
+      "custom-pixel"
+    ],
+    "author": "Anoop Jangir",
+    "license": "MIT",
     "devDependencies": {
       "typescript": "^5.7.3",
       "vite": "^7.0.0",
