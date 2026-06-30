@@ -72,6 +72,14 @@ interface CommerceData {
 }
 
 // ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+const isBrowser = (): boolean => {
+  return typeof window !== 'undefined' && typeof navigator !== 'undefined';
+};
+
+// ============================================================================
 // CONTEXT COLLECTOR
 // ============================================================================
 
@@ -98,20 +106,37 @@ class ContextCollector {
 
   private parseUTMParameters(): UTMParams {
     const params: UTMParams = {};
-    const urlParams = new URLSearchParams(window.location.search);
-
-    const utmKeys = ['source', 'medium', 'campaign', 'content', 'term'] as const;
-    utmKeys.forEach((key) => {
-      const value = urlParams.get(`utm_${key}`);
-      if (value) {
-        params[key] = value;
-      }
-    });
+    
+    if (!isBrowser()) return params;
+    
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const utmKeys = ['source', 'medium', 'campaign', 'content', 'term'] as const;
+      
+      utmKeys.forEach((key) => {
+        const value = urlParams.get(`utm_${key}`);
+        if (value) {
+          params[key] = value;
+        }
+      });
+    } catch (error) {
+      console.warn('[Analytics] Failed to parse UTM parameters', error);
+    }
 
     return params;
   }
 
   private getUserAgent() {
+    if (!isBrowser()) {
+      return {
+        browser: 'Unknown',
+        browserVersion: 'Unknown',
+        os: 'Unknown',
+        osVersion: 'Unknown',
+        device: 'Unknown',
+      };
+    }
+
     const ua = navigator.userAgent;
     const browserMatch =
       ua.match(/(?:Chrome|Safari|Firefox|Edge|Opera)\/(\d+)/i) || [];
@@ -129,6 +154,23 @@ class ContextCollector {
 
   collect(): ContextData {
     const ua = this.getUserAgent();
+
+    if (!isBrowser()) {
+      return {
+        ...ua,
+        screenResolution: 'Unknown',
+        viewport: 'Unknown',
+        language: 'Unknown',
+        timezone: 'Unknown',
+        url: '',
+        path: '',
+        referrer: 'Unknown',
+        utmParameters: {},
+        timestamp: Date.now(),
+        sessionId: this.sessionId,
+        anonymousId: this.anonymousId,
+      };
+    }
 
     return {
       ...ua,
@@ -171,7 +213,6 @@ interface IProvider {
 // ============================================================================
 
 class MParticleProvider implements IProvider {
-  private window: any = globalThis as any;
   private debug: boolean;
   private contextCollector: ContextCollector;
 
@@ -182,7 +223,11 @@ class MParticleProvider implements IProvider {
   }
 
   private loadSDK(apiKey: string): void {
-    if (this.window.mParticle) {
+    if (!isBrowser()) return;
+
+    const w = window as any;
+
+    if (w.mParticle) {
       this.log('mParticle already loaded');
       return;
     }
@@ -191,7 +236,7 @@ class MParticleProvider implements IProvider {
       isDevelopmentMode: this.debug,
     };
 
-    this.window.mParticle = {
+    w.mParticle = {
       config: config,
     };
 
@@ -206,7 +251,11 @@ class MParticleProvider implements IProvider {
 
   identify(identity: UserIdentity): void {
     try {
-      if (!this.window.mParticle?.Identity) {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      if (!w.mParticle?.Identity) {
         this.log('mParticle Identity not ready');
         return;
       }
@@ -239,8 +288,8 @@ class MParticleProvider implements IProvider {
         };
       }
 
-      this.window.mParticle.Identity.login(identityRequest);
-      this.log('User identified', identity);
+      w.mParticle.Identity.login(identityRequest);
+      this.log('User identified', identity.id);
     } catch (error) {
       this.error('Failed to identify user', error);
     }
@@ -248,7 +297,11 @@ class MParticleProvider implements IProvider {
 
   track(event: EventData): void {
     try {
-      if (!this.window.mParticle?.logEvent) {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      if (!w.mParticle?.logEvent) {
         this.log('mParticle logEvent not ready');
         return;
       }
@@ -258,9 +311,9 @@ class MParticleProvider implements IProvider {
         ...event.context,
       };
 
-      this.window.mParticle.logEvent(
+      w.mParticle.logEvent(
         event.name,
-        this.window.mParticle.EventType.Custom,
+        w.mParticle.EventType?.Custom || 1,
         attributes
       );
 
@@ -272,12 +325,16 @@ class MParticleProvider implements IProvider {
 
   commerce(event: EventData, data: CommerceData): void {
     try {
-      if (!this.window.mParticle?.eCommerce) {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      if (!w.mParticle?.eCommerce) {
         this.log('mParticle eCommerce not ready');
         return;
       }
 
-      const product = new this.window.mParticle.Product(
+      const product = new w.mParticle.Product(
         data.productName || 'Unknown',
         data.productId || 'unknown',
         data.price || 0,
@@ -296,18 +353,17 @@ class MParticleProvider implements IProvider {
         transactionAttributes.revenue = data.cartValue;
       }
 
-      switch (event.name.toLowerCase()) {
+      const eventNameLower = event.name.toLowerCase();
+
+      switch (eventNameLower) {
         case 'add_to_cart':
-          this.window.mParticle.eCommerce.addToCart(product);
+          w.mParticle.eCommerce.addToCart(product);
           break;
         case 'remove_from_cart':
-          this.window.mParticle.eCommerce.removeFromCart(product);
+          w.mParticle.eCommerce.removeFromCart(product);
           break;
         case 'purchase':
-          this.window.mParticle.eCommerce.logPurchase(
-            transactionAttributes,
-            [product]
-          );
+          w.mParticle.eCommerce.logPurchase(transactionAttributes, [product]);
           break;
       }
 
@@ -319,12 +375,16 @@ class MParticleProvider implements IProvider {
 
   page(eventName: string, properties?: Record<string, unknown>): void {
     try {
-      if (!this.window.mParticle?.logPageView) {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      if (!w.mParticle?.logPageView) {
         this.log('mParticle logPageView not ready');
         return;
       }
 
-      this.window.mParticle.logPageView(eventName, properties || {});
+      w.mParticle.logPageView(eventName, properties || {});
       this.log('Page view tracked', eventName);
     } catch (error) {
       this.error('Failed to track page view', error);
@@ -347,7 +407,6 @@ class MParticleProvider implements IProvider {
 // ============================================================================
 
 class GA4Provider implements IProvider {
-  private window: any = globalThis as any;
   private debug: boolean;
   private contextCollector: ContextCollector;
 
@@ -358,7 +417,11 @@ class GA4Provider implements IProvider {
   }
 
   private loadSDK(measurementId: string): void {
-    if (this.window.gtag) {
+    if (!isBrowser()) return;
+
+    const w = window as any;
+
+    if (w.gtag) {
       this.log('GA4 already loaded');
       return;
     }
@@ -368,13 +431,13 @@ class GA4Provider implements IProvider {
     script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
     document.head.appendChild(script);
 
-    this.window.dataLayer = this.window.dataLayer || [];
+    w.dataLayer = w.dataLayer || [];
 
     const gtag = function (...args: any[]) {
-      this.window.dataLayer.push(arguments);
+      w.dataLayer.push(arguments);
     };
 
-    this.window.gtag = gtag;
+    w.gtag = gtag;
     gtag('js', new Date());
     gtag('config', measurementId, {
       debug_mode: this.debug,
@@ -385,7 +448,11 @@ class GA4Provider implements IProvider {
 
   identify(identity: UserIdentity): void {
     try {
-      this.window.gtag?.('set', {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      w.gtag?.('set', {
         user_id: identity.id,
         user_properties: {
           email: identity.email,
@@ -396,7 +463,7 @@ class GA4Provider implements IProvider {
         },
       });
 
-      this.log('User identified', identity);
+      this.log('User identified', identity.id);
     } catch (error) {
       this.error('Failed to identify user', error);
     }
@@ -404,7 +471,11 @@ class GA4Provider implements IProvider {
 
   track(event: EventData): void {
     try {
-      this.window.gtag?.('event', event.name, event.properties);
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      w.gtag?.('event', event.name, event.properties);
       this.log('Event tracked', event.name);
     } catch (error) {
       this.error('Failed to track event', error);
@@ -413,6 +484,10 @@ class GA4Provider implements IProvider {
 
   commerce(event: EventData, data: CommerceData): void {
     try {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
       const items = [
         {
           item_id: data.productId,
@@ -431,7 +506,7 @@ class GA4Provider implements IProvider {
         eventData.value = data.cartValue;
       }
 
-      this.window.gtag?.('event', event.name, eventData);
+      w.gtag?.('event', event.name, eventData);
       this.log('Commerce event tracked', event.name);
     } catch (error) {
       this.error('Failed to track commerce event', error);
@@ -440,7 +515,11 @@ class GA4Provider implements IProvider {
 
   page(eventName: string, properties?: Record<string, unknown>): void {
     try {
-      this.window.gtag?.('event', 'page_view', {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      w.gtag?.('event', 'page_view', {
         page_title: eventName,
         ...properties,
       });
@@ -467,7 +546,6 @@ class GA4Provider implements IProvider {
 // ============================================================================
 
 class MetaPixelProvider implements IProvider {
-  private window: any = globalThis as any;
   private debug: boolean;
   private contextCollector: ContextCollector;
 
@@ -478,7 +556,11 @@ class MetaPixelProvider implements IProvider {
   }
 
   private loadSDK(pixelId: string): void {
-    if (this.window.fbq) {
+    if (!isBrowser()) return;
+
+    const w = window as any;
+
+    if (w.fbq) {
       this.log('Meta Pixel already loaded');
       return;
     }
@@ -488,25 +570,29 @@ class MetaPixelProvider implements IProvider {
     script.src = 'https://connect.facebook.net/en_US/fbevents.js';
     document.head.appendChild(script);
 
-    this.window.fbq = function (...args: any[]) {
-      if (this.window.fbq.callMethod) {
-        this.window.fbq.callMethod.apply(this.window.fbq, args);
+    w.fbq = function (...args: any[]) {
+      if (w.fbq.callMethod) {
+        w.fbq.callMethod.apply(w.fbq, args);
       } else {
-        this.window.fbq.queue.push(args);
+        w.fbq.queue.push(args);
       }
     };
 
-    this.window.fbq.push = this.window.fbq;
-    this.window.fbq.queue = [];
-    this.window.fbq.loaded = true;
-    this.window.fbq('init', pixelId);
-    this.window.fbq('track', 'PageView');
+    w.fbq.push = w.fbq;
+    w.fbq.queue = [];
+    w.fbq.loaded = true;
+    w.fbq('init', pixelId);
+    w.fbq('track', 'PageView');
 
     this.log('Meta Pixel SDK loaded');
   }
 
   identify(identity: UserIdentity): void {
     try {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
       const userData = {
         em: identity.email,
         fn: identity.firstName,
@@ -514,8 +600,8 @@ class MetaPixelProvider implements IProvider {
         ph: identity.phone,
       };
 
-      this.window.fbq?.('setUserData', userData);
-      this.log('User identified', identity);
+      w.fbq?.('setUserData', userData);
+      this.log('User identified', identity.id);
     } catch (error) {
       this.error('Failed to identify user', error);
     }
@@ -523,7 +609,11 @@ class MetaPixelProvider implements IProvider {
 
   track(event: EventData): void {
     try {
-      this.window.fbq?.('track', 'Custom', event.properties);
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      w.fbq?.('track', 'Custom', event.properties);
       this.log('Event tracked', event.name);
     } catch (error) {
       this.error('Failed to track event', error);
@@ -532,6 +622,10 @@ class MetaPixelProvider implements IProvider {
 
   commerce(event: EventData, data: CommerceData): void {
     try {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
       const eventData: any = {
         content_name: data.productName,
         content_ids: [data.productId],
@@ -542,7 +636,9 @@ class MetaPixelProvider implements IProvider {
 
       let metaEvent = 'ViewContent';
 
-      switch (event.name.toLowerCase()) {
+      const eventNameLower = event.name.toLowerCase();
+
+      switch (eventNameLower) {
         case 'add_to_cart':
           metaEvent = 'AddToCart';
           break;
@@ -558,7 +654,7 @@ class MetaPixelProvider implements IProvider {
           break;
       }
 
-      this.window.fbq?.('track', metaEvent, eventData);
+      w.fbq?.('track', metaEvent, eventData);
       this.log('Commerce event tracked', event.name);
     } catch (error) {
       this.error('Failed to track commerce event', error);
@@ -567,7 +663,11 @@ class MetaPixelProvider implements IProvider {
 
   page(eventName: string, properties?: Record<string, unknown>): void {
     try {
-      this.window.fbq?.('track', 'PageView', properties || {});
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      w.fbq?.('track', 'PageView', properties || {});
       this.log('Page view tracked', eventName);
     } catch (error) {
       this.error('Failed to track page view', error);
@@ -590,7 +690,6 @@ class MetaPixelProvider implements IProvider {
 // ============================================================================
 
 class SegmentProvider implements IProvider {
-  private window: any = globalThis as any;
   private debug: boolean;
   private contextCollector: ContextCollector;
 
@@ -601,7 +700,11 @@ class SegmentProvider implements IProvider {
   }
 
   private loadSDK(writeKey: string): void {
-    if (this.window.analytics) {
+    if (!isBrowser()) return;
+
+    const w = window as any;
+
+    if (w.analytics) {
       this.log('Segment already loaded');
       return;
     }
@@ -611,7 +714,7 @@ class SegmentProvider implements IProvider {
     script.src = `https://cdn.segment.com/analytics.js/v1/${writeKey}/analytics.min.js`;
     document.head.appendChild(script);
 
-    this.window.analytics = this.window.analytics || [];
+    w.analytics = w.analytics || [];
 
     const methods = [
       'trackSubmit',
@@ -633,25 +736,29 @@ class SegmentProvider implements IProvider {
     ];
 
     methods.forEach((method) => {
-      this.window.analytics[method] = function (...args: any[]) {
-        this.window.analytics.push([method, ...args]);
+      w.analytics[method] = function (...args: any[]) {
+        w.analytics.push([method, ...args]);
       };
     });
 
-    this.window.analytics.load = (key: string) => {
+    w.analytics.load = (key: string) => {
       const config = { apiKey: key };
-      this.window.analytics._loadOptions = config;
+      w.analytics._loadOptions = config;
     };
 
-    this.window.analytics.SNIPPET_VERSION = '4.15.3';
-    this.window.analytics.load(writeKey);
+    w.analytics.SNIPPET_VERSION = '4.15.3';
+    w.analytics.load(writeKey);
 
     this.log('Segment SDK loaded');
   }
 
   identify(identity: UserIdentity): void {
     try {
-      this.window.analytics?.identify(identity.id, {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      w.analytics?.identify(identity.id, {
         email: identity.email,
         firstName: identity.firstName,
         lastName: identity.lastName,
@@ -659,7 +766,7 @@ class SegmentProvider implements IProvider {
         ...identity.customAttributes,
       });
 
-      this.log('User identified', identity);
+      this.log('User identified', identity.id);
     } catch (error) {
       this.error('Failed to identify user', error);
     }
@@ -667,7 +774,11 @@ class SegmentProvider implements IProvider {
 
   track(event: EventData): void {
     try {
-      this.window.analytics?.track(event.name, event.properties);
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      w.analytics?.track(event.name, event.properties);
       this.log('Event tracked', event.name);
     } catch (error) {
       this.error('Failed to track event', error);
@@ -676,6 +787,10 @@ class SegmentProvider implements IProvider {
 
   commerce(event: EventData, data: CommerceData): void {
     try {
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
       const properties: any = {
         productId: data.productId,
         productName: data.productName,
@@ -688,7 +803,7 @@ class SegmentProvider implements IProvider {
         properties.cartValue = data.cartValue;
       }
 
-      this.window.analytics?.track(event.name, properties);
+      w.analytics?.track(event.name, properties);
       this.log('Commerce event tracked', event.name);
     } catch (error) {
       this.error('Failed to track commerce event', error);
@@ -697,7 +812,11 @@ class SegmentProvider implements IProvider {
 
   page(eventName: string, properties?: Record<string, unknown>): void {
     try {
-      this.window.analytics?.page(eventName, properties || {});
+      if (!isBrowser()) return;
+
+      const w = window as any;
+
+      w.analytics?.page(eventName, properties || {});
       this.log('Page view tracked', eventName);
     } catch (error) {
       this.error('Failed to track page view', error);
@@ -723,13 +842,16 @@ class CustomPixelIntegration {
   private provider: IProvider | null = null;
   private contextCollector: ContextCollector;
   private debug: boolean;
-  private trackedEvents: Set<string> = new Set();
+  private trackedEvents: Map<string, number> = new Map();
 
   constructor(config: AnalyticsConfig) {
     this.debug = config.debug || false;
     this.contextCollector = ContextCollector.getInstance();
     this.initializeProvider(config);
-    this.setupAutoTracking();
+    
+    if (isBrowser()) {
+      this.setupAutoTracking();
+    }
   }
 
   private initializeProvider(config: AnalyticsConfig): void {
@@ -790,7 +912,7 @@ class CustomPixelIntegration {
       };
 
       this.provider?.identify(identity);
-      this.track('login_success', {
+      this.trackOnce('login_success', {
         userId,
         email,
         timestamp: Date.now(),
@@ -829,7 +951,7 @@ class CustomPixelIntegration {
       };
 
       this.provider?.identify(identity);
-      this.track('account_created', {
+      this.trackOnce('account_created', {
         userId,
         email,
         timestamp: Date.now(),
@@ -990,7 +1112,7 @@ class CustomPixelIntegration {
         );
       });
 
-      this.track('purchase_completed', {
+      this.trackOnce('purchase_completed', {
         itemCount: cartData.length,
         totalValue: cartData.reduce((sum, item) => sum + (item.cartValue || 0), 0),
         timestamp: Date.now(),
@@ -1006,10 +1128,24 @@ class CustomPixelIntegration {
   // GENERIC TRACKING
   // ========================================================================
 
+  private trackOnce(eventName: string, properties?: Record<string, unknown>): void {
+    const lastTracked = this.trackedEvents.get(eventName);
+    const now = Date.now();
+
+    // Only track if not tracked in last 60 seconds
+    if (lastTracked && now - lastTracked < 60000) {
+      this.log(`Event throttled (tracked recently): ${eventName}`);
+      return;
+    }
+
+    this.trackedEvents.set(eventName, now);
+    this.track(eventName, properties);
+  }
+
   track(eventName: string, properties?: Record<string, unknown>): void {
     try {
-      if (this.trackedEvents.has(eventName)) {
-        this.log(`Event already tracked in this session: ${eventName}`);
+      if (!this.provider) {
+        this.log('Provider not initialized yet');
         return;
       }
 
@@ -1022,8 +1158,7 @@ class CustomPixelIntegration {
         context,
       };
 
-      this.provider?.track(eventData);
-      this.trackedEvents.add(eventName);
+      this.provider.track(eventData);
     } catch (error) {
       this.error('Failed to track event', error);
     }
@@ -1031,7 +1166,12 @@ class CustomPixelIntegration {
 
   page(pageName: string, properties?: Record<string, unknown>): void {
     try {
-      this.provider?.page(pageName, properties);
+      if (!this.provider) {
+        this.log('Provider not initialized yet');
+        return;
+      }
+
+      this.provider.page(pageName, properties);
       this.log('Page tracked', pageName);
     } catch (error) {
       this.error('Failed to track page', error);
@@ -1057,6 +1197,8 @@ class CustomPixelIntegration {
   }
 
   private detectPageType(): void {
+    if (!isBrowser()) return;
+
     const path = window.location.pathname.toLowerCase();
     const search = window.location.search.toLowerCase();
 
@@ -1076,6 +1218,8 @@ class CustomPixelIntegration {
   }
 
   private setupCustomEventListeners(): void {
+    if (!isBrowser()) return;
+
     document.addEventListener('shopify:analytics:login_success', (e: any) => {
       this.loginSuccess(e.detail?.userId, e.detail?.email, e.detail?.attributes);
     });
@@ -1131,13 +1275,14 @@ class CustomPixelIntegration {
 declare global {
   interface Window {
     ShopifyAnalytics: CustomPixelIntegration;
+    ShopifyAnalyticsConfig?: AnalyticsConfig;
   }
 }
 
 // Auto-initialize if config is available
-if ((globalThis as any).window?.ShopifyAnalyticsConfig) {
-  const config = (globalThis as any).window.ShopifyAnalyticsConfig as AnalyticsConfig;
-  (globalThis as any).window.ShopifyAnalytics = new CustomPixelIntegration(config);
+if (isBrowser() && (window as any).ShopifyAnalyticsConfig) {
+  const config = (window as any).ShopifyAnalyticsConfig as AnalyticsConfig;
+  (window as any).ShopifyAnalytics = new CustomPixelIntegration(config);
 }
 
 export {
