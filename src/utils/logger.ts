@@ -22,10 +22,10 @@ export class Logger {
   }
 
   warn(...args: unknown[]): void {
-    console.warn(`[${this.prefix} Warning]`, ...args);
+    console.warn(`[${this.prefix}]`, ...args);
   }
 
   error(...args: unknown[]): void {
-    console.error(`[${this.prefix} Error]`, ...args);
+    console.error(`[${this.prefix}]`, ...args);
   }
 }

@@ -47,27 +47,13 @@ export interface EventData {
 }
 
 export interface AnalyticsConfig {
-  provider: 'mparticle' | 'ga4' | 'meta' | 'segment';
-  mparticleKey?: string;
-  ga4Id?: string;
-  metaPixelId?: string;
-  segmentKey?: string;
+  provider: 'mparticle';
+  mparticleKey: string;
   debug?: boolean;
-}
-
-export interface CommerceData {
-  productId?: string;
-  productName?: string;
-  price?: number;
-  quantity?: number;
-  currency?: string;
-  cartValue?: number;
-  cartItems?: number;
 }
 
 export interface IProvider {
   identify(identity: UserIdentity): void;
   track(event: EventData): void;
-  commerce(event: EventData, data: CommerceData): void;
   page(eventName: string, properties?: Record<string, unknown>): void;
 }

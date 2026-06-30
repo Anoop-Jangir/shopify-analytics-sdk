@@ -2,12 +2,11 @@
  * mParticle Provider Implementation
  */
 
-import { IProvider, UserIdentity, EventData, CommerceData } from '../types';
+import { IProvider, UserIdentity, EventData } from '../types';
 import { isBrowser, Logger } from '../utils';
 
 export class MParticleProvider implements IProvider {
   private logger: Logger;
-  private contextCollector: any;
 
   constructor(apiKey: string, debug = false) {
     this.logger = new Logger('MParticle', debug);
@@ -24,19 +23,11 @@ export class MParticleProvider implements IProvider {
       return;
     }
 
-    const config: any = {
-      isDevelopmentMode: this.logger['debug'],
-    };
-
-    w.mParticle = {
-      config: config,
-    };
-
     const script = document.createElement('script');
     script.type = 'text/javascript';
     script.async = true;
     script.src = `https://cdn-api.mparticle.com/JS/${apiKey}/mparticle.js`;
-    script.onload = () => this.logger.log('SDK loaded');
+    script.onload = () => this.logger.log('SDK loaded successfully');
     script.onerror = () => this.logger.error('Failed to load SDK');
     document.head.appendChild(script);
   }
@@ -47,8 +38,10 @@ export class MParticleProvider implements IProvider {
 
       const w = window as any;
 
+      // Wait for mParticle to be ready
       if (!w.mParticle?.Identity) {
-        this.logger.log('Identity not ready');
+        this.logger.log('mParticle Identity not ready, retrying...');
+        setTimeout(() => this.identify(identity), 1000);
         return;
       }
 
@@ -94,7 +87,7 @@ export class MParticleProvider implements IProvider {
       const w = window as any;
 
       if (!w.mParticle?.logEvent) {
-        this.logger.log('logEvent not ready');
+        this.logger.log('mParticle logEvent not ready');
         return;
       }
 
@@ -110,56 +103,6 @@ export class MParticleProvider implements IProvider {
     }
   }
 
-  commerce(event: EventData, data: CommerceData): void {
-    try {
-      if (!isBrowser()) return;
-
-      const w = window as any;
-
-      if (!w.mParticle?.eCommerce) {
-        this.logger.log('eCommerce not ready');
-        return;
-      }
-
-      const product = new w.mParticle.Product(
-        data.productName || 'Unknown',
-        data.productId || 'unknown',
-        data.price || 0,
-        data.quantity || 1
-      );
-
-      const transactionAttributes: any = {
-        transactionId: `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-      };
-
-      if (data.currency) {
-        transactionAttributes.currency = data.currency;
-      }
-
-      if (data.cartValue) {
-        transactionAttributes.revenue = data.cartValue;
-      }
-
-      const eventNameLower = event.name.toLowerCase();
-
-      switch (eventNameLower) {
-        case 'add_to_cart':
-          w.mParticle.eCommerce.addToCart(product);
-          break;
-        case 'remove_from_cart':
-          w.mParticle.eCommerce.removeFromCart(product);
-          break;
-        case 'purchase':
-          w.mParticle.eCommerce.logPurchase(transactionAttributes, [product]);
-          break;
-      }
-
-      this.logger.log('Commerce event tracked:', event.name);
-    } catch (error) {
-      this.logger.error('Failed to track commerce event', error);
-    }
-  }
-
   page(eventName: string, properties?: Record<string, unknown>): void {
     try {
       if (!isBrowser()) return;
@@ -167,7 +110,7 @@ export class MParticleProvider implements IProvider {
       const w = window as any;
 
       if (!w.mParticle?.logPageView) {
-        this.logger.log('logPageView not ready');
+        this.logger.log('mParticle logPageView not ready');
         return;
       }
 

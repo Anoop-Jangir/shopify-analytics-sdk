@@ -24,10 +24,6 @@ export class ContextCollector {
     return ContextCollector.instance;
   }
 
-  static reset(): void {
-    ContextCollector.instance = null as any;
-  }
-
   private generateId(prefix: string): string {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   }
@@ -48,7 +44,7 @@ export class ContextCollector {
         }
       });
     } catch (error) {
-      this.logger.warn('Failed to parse UTM parameters', error);
+      this.logger.warn('Failed to parse UTM parameters');
     }
 
     return params;

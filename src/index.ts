@@ -1,6 +1,6 @@
 /**
  * Shopify Analytics SDK - Main Entry Point
- * Supports mParticle, GA4, Meta Pixel, and Segment
+ * Currently supports mParticle with login tracking
  */
 
 import { CustomPixelIntegration } from './integrations/custom-pixel-integration';
